@@ -116,7 +116,7 @@ jobs:
         run: flutter build apk --release --split-per-abi
 
       - name: 编译 APK（通用包）
-        if: inputs.build_universal != false
+        if: github.event_name != 'workflow_dispatch' || inputs.build_universal
         working-directory: simple_live_app
         run: flutter build apk --release
 
@@ -160,7 +160,7 @@ jobs:
           retention-days: 30
 
       - name: 准备 Release 说明
-        if: github.event_name == 'push' || inputs.publish_release != false
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_release
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/notes.md" <<EOF
@@ -184,7 +184,7 @@ jobs:
           EOF
 
       - name: 更新 Release（android-latest）
-        if: github.event_name == 'push' || inputs.publish_release != false
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_release
         run: |
           set -euo pipefail
           V="${{ steps.version.outputs.version_name }}"
