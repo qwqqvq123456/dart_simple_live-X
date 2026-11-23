@@ -11,53 +11,56 @@
 
 ---
 
-## 一、安装（约 3 分钟，纯网页操作）
+## 一、当前状态（已全部配置完成）
+
+| 项目 | 状态 |
+| --- | --- |
+| 两个工作流文件 | ✅ 已提交到 `master` |
+| Actions | ✅ 已启用（`enabled: all`） |
+| 固定签名密钥 | ✅ 已写入仓库 Secrets（`ANDROID_KEYSTORE_BASE64` / `_PASSWORD` / `_ALIAS`），证书指纹 `52:28:F0:69…2F:F3` |
+| 依赖固定 | ✅ 已提交 `simple_live_app/pubspec_overrides.yaml` |
+| 构建验证 | ✅ 多次运行通过，产出 4 个 APK |
+| Release 发布 | ✅ <https://github.com/qwqqvq123456/dart_simple_live-X/releases/tag/android-latest> |
+
+签名密钥文件在本目录 `signing/android-release.jks`，密码在 `signing/keystore-password.txt`。
+**请务必备份这两样东西**：以后要换机器手动签名、或想换密钥时都需要它；丢了就只能让用户卸载重装。
+
+---
+
+## 二、如需在别的仓库重装（或重新配置）
 
 ### 第 1 步：创建同步工作流
 
-打开下面链接（会自动进入"新建文件"页面并填好路径）：
-
 <https://github.com/qwqqvq123456/dart_simple_live-X/new/master?filename=.github/workflows/sync-upstream.yml>
 
-把本目录下 `.github/workflows/sync-upstream.yml` 的全部内容粘贴进去 → 点 **Commit changes** → 直接提交到 `master`。
+粘贴 `.github/workflows/sync-upstream.yml` 内容 → **Commit changes**。
 
 ### 第 2 步：创建构建工作流
 
 <https://github.com/qwqqvq123456/dart_simple_live-X/new/master?filename=.github/workflows/build-android-release.yml>
 
-同样粘贴 `.github/workflows/build-android-release.yml` 的内容并提交。
-
-> 提交到 `master` 本身就会触发第一次 Android 构建，可以先让它跑起来。
+粘贴 `.github/workflows/build-android-release.yml` 内容并提交（这次提交会自动跑第一次构建）。
 
 ### 第 3 步：启用 Actions
 
-fork 仓库的 Actions 默认可能是关闭的。打开：
-
 <https://github.com/qwqqvq123456/dart_simple_live-X/actions>
 
-如果看到绿色按钮 **I understand my workflows, go ahead and enable them**，点它。
-然后在左侧列表里点 **同步上游主线** → 右侧 **Enable workflow**（fork 的定时任务默认不启用，必须手动启用一次，否则定时同步不会跑）。
+看到 **I understand my workflows, go ahead and enable them** 就点它；再到「同步上游主线」右侧点 **Enable workflow**（fork 的定时任务默认不启用，不点永远不会自动同步）。
 
-### 第 4 步（可选，强烈建议）：配置固定的签名密钥
+### 第 4 步：配置固定签名密钥
 
-不配置也能出可安装的 APK，但每次构建的签名密钥是临时生成的，**新旧版本签名不一致，覆盖安装会失败**。配置一次即可长期固定。
+不配置也能出可安装的 APK，但每次构建签名都不同，**覆盖安装会失败**。两种方式：
 
-```bash
-# 本机执行（需要 JDK，任意目录）
-bash scripts/gen-keystore.sh
-```
+- 直接用本目录 `signing/` 里现成的：把 `android-release.jks` 做 base64，密码取 `keystore-password.txt`；
+- 或自己生成：`bash scripts/gen-keystore.sh`
 
-脚本会生成 `android-release.jks`，并打印三样东西。到仓库
-**Settings → Secrets and variables → Actions → New repository secret** 添加：
+到 **Settings → Secrets and variables → Actions → New repository secret**：
 
 | Name | Value |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | 脚本打印的那一大串 base64 |
-| `ANDROID_KEYSTORE_PASSWORD` | 你设置的密码 |
-| `ANDROID_KEY_ALIAS` | 默认 `simplelive` |
-
-没有本地环境也可以在线生成：任意支持 `keytool` 的机器/容器执行同一条命令即可。
-备份好 `android-release.jks` 和密码——丢了就无法对已装应用做覆盖升级。
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 android-release.jks` 的输出 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_ALIAS` | `simplelive` |
 
 ---
 
@@ -151,12 +154,36 @@ GitHub 规定用内置 `GITHUB_TOKEN` 推送的提交不会触发 `push` 类工�
 
 ---
 
-## 四、目录内容
+## 四、验证记录（本次实测）
+
+| 验证项 | 结果 |
+| --- | --- |
+| 构建工作流（push 触发） | ✅ 通过，用时约 5–8 分钟 |
+| 构建工作流（workflow_dispatch 触发） | ✅ 通过 |
+| 同步工作流（手动触发） | ✅ 通过，正确识别上游 `master` 无新提交 |
+| 同步 → 触发构建（内置 `GITHUB_TOKEN`） | ✅ 已实测：同步 job 内 `gh workflow run` 成功拉起构建 |
+| Release 自动发布（tag `android-latest`） | ✅ 4 个 APK 全部上传，说明随构建更新 |
+| APK 包名 / 版本 | `com.xycz.simple_live`，`1.11.4`，minSdk 24，targetSdk 36 |
+| APK 签名 | ✅ `apksigner verify` 通过（v2 方案），4 个包证书指纹一致 |
+| 签名一致性（跨构建） | ✅ 固定密钥生效，指纹 `52:28:F0:69…2F:F3` |
+| zipalign / 压缩包完整性 | ✅ 4 字节对齐，`unzip -t` 无错误 |
+| 原生库 | ✅ `libflutter.so`、`libapp.so`、`libmpv.so`、`libdart_quickjs.so` 齐全 |
+| 启动入口 | ✅ `com.xycz.simple_live.MainActivity` |
+
+> 说明：CI 上构建出的 APK 已做静态校验（签名、对齐、ABI、原生库、启动 Activity），未在真机/模拟器上做安装运行测试。
+
+---
+
+## 五、目录内容
 
 ```
 dart_simple_live-X-actions/
 ├─ .github/workflows/sync-upstream.yml          # 自动同步上游
 ├─ .github/workflows/build-android-release.yml  # 自动构建 APK
-├─ scripts/gen-keystore.sh                      # 生成固定签名密钥
+├─ pubspec_overrides.yaml                       # 依赖版本固定（仓库内为 simple_live_app/ 下）
+├─ signing/
+│  ├─ android-release.jks                       # 固定签名密钥（务必备份）
+│  └─ keystore-password.txt                     # 对应密码
+├─ scripts/gen-keystore.sh                      # 重新生成签名密钥的脚本
 └─ 使用说明.md
 ```
