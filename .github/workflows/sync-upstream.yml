@@ -1,0 +1,172 @@
+name: 同步上游主线
+
+# 作用：定时（或手动）把 xiaoyaocz/dart_simple_live 的 master 合并进本仓库，
+# 合并成功后自动触发 Android 构建工作流。全程无需本地操作。
+
+on:
+  schedule:
+    # UTC 01:00 / 13:00 = 北京时间 09:00 / 21:00，每天两次
+    - cron: "0 1,13 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "强制模式：丢弃本仓库改动，直接对齐上游 master"
+        required: false
+        type: boolean
+        default: false
+      trigger_build:
+        description: "同步成功后立即触发 Android 构建"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream-master
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: 合并上游 master
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      UPSTREAM_REPO: https://github.com/xiaoyaocz/dart_simple_live.git
+      UPSTREAM_BRANCH: master
+      BUILD_WORKFLOW: build-android-release.yml
+
+    steps:
+      - name: 签出本仓库 master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          # 若配置了 SYNC_TOKEN（PAT）则优先使用，否则用内置 GITHUB_TOKEN
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: 配置 git 身份
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 拉取上游并计算差异
+        id: upstream
+        run: |
+          set -euo pipefail
+          git remote add upstream "$UPSTREAM_REPO" 2>/dev/null || git remote set-url upstream "$UPSTREAM_REPO"
+          git fetch --no-tags --prune upstream "$UPSTREAM_BRANCH"
+
+          BEHIND=$(git rev-list --count "HEAD..upstream/$UPSTREAM_BRANCH")
+          AHEAD=$(git rev-list --count "upstream/$UPSTREAM_BRANCH..HEAD")
+          UPSTREAM_SHA=$(git rev-parse --short "upstream/$UPSTREAM_BRANCH")
+
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 上游状态"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 上游最新提交 | \`$UPSTREAM_SHA\` |"
+            echo "| 本仓库落后 | $BEHIND 个提交 |"
+            echo "| 本仓库独有 | $AHEAD 个提交 |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "落后 $BEHIND 个提交，本仓库独有 $AHEAD 个提交"
+
+      - name: 无需同步
+        if: steps.upstream.outputs.behind == '0'
+        run: |
+          echo "✅ 已经和上游一致，不需要同步。"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ 已经和上游一致，本次无需同步。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 合并上游（保留本仓库改动）
+        if: steps.upstream.outputs.behind != '0' && inputs.force != true
+        id: merge
+        run: |
+          set -uo pipefail
+          BEFORE=$(git rev-parse HEAD)
+
+          if git merge --no-ff --no-edit "upstream/$UPSTREAM_BRANCH" \
+               -m "chore(sync): 合并上游 xiaoyaocz/dart_simple_live@${{ steps.upstream.outputs.upstream_sha }}"; then
+            echo "✅ 合并成功"
+          else
+            git merge --abort || true
+            {
+              echo "### ❌ 合并冲突"
+              echo ""
+              echo "上游提交 \`${{ steps.upstream.outputs.upstream_sha }}\` 与本仓库改动存在冲突，已自动回滚，未做任何修改。"
+              echo ""
+              echo "处理方式（三选一）："
+              echo ""
+              echo "1. 重新运行本工作流并勾选 **force**，用上游覆盖本仓库（会丢失本仓库所有改动）；"
+              echo "2. 在 GitHub 网页上手动解决冲突后提交；"
+              echo "3. 本地执行 \`git fetch upstream && git merge upstream/master\` 解决后推送。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::合并上游时发生冲突，请查看 Summary 中的处理建议。"
+            exit 1
+          fi
+
+          if [ "$(git rev-parse HEAD)" = "$BEFORE" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 强制对齐上游
+        if: steps.upstream.outputs.behind != '0' && inputs.force == true
+        id: hard_reset
+        run: |
+          set -uo pipefail
+          BEFORE=$(git rev-parse HEAD)
+          git reset --hard "upstream/$UPSTREAM_BRANCH"
+
+          # 强制模式下保住本仓库自己的两个工作流文件，否则同步会失效
+          for f in .github/workflows/sync-upstream.yml .github/workflows/build-android-release.yml; do
+            if git cat-file -e "$BEFORE:$f" 2>/dev/null; then
+              git checkout "$BEFORE" -- "$f"
+            fi
+          done
+
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(ci): 对齐上游时保留自定义工作流"
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::已使用强制模式，本仓库独有的改动已被丢弃。"
+
+      - name: 推送 master
+        if: steps.upstream.outputs.behind != '0'
+        id: push
+        run: |
+          set -euo pipefail
+          git push origin HEAD:master
+          NEW_SHA=$(git rev-parse --short HEAD)
+          echo "sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "✅ 已合并并推送到 master：\`$NEW_SHA\`"
+            echo ""
+            echo "本次从上游带入的提交："
+            echo ""
+            echo '```'
+            git log --oneline --no-decorate "HEAD~${{ steps.upstream.outputs.behind }}..HEAD" 2>/dev/null | head -20 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 触发 Android 构建
+        if: steps.upstream.outputs.behind != '0' && inputs.trigger_build != false
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run "$BUILD_WORKFLOW" --ref master
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "🚀 已触发 Android 构建：[查看运行记录](https://github.com/${{ github.repository }}/actions/workflows/$BUILD_WORKFLOW)" >> "$GITHUB_STEP_SUMMARY"
