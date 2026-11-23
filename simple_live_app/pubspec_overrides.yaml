@@ -1,0 +1,7 @@
+# 该文件用于固定个别依赖的版本，避免上游 pubspec.yaml 的 ^ 范围自动升级到
+# 与当前 AGP 8.9 / Gradle 8.12 不兼容的新版本（不修改 pubspec.yaml，避免与上游同步时冲突）。
+#
+# auto_orientation_v2 2.4.7 要求 AGP 9.x 并使用了 kotlin {} 扩展，
+# 在 AGP 8.9 下会报：Could not find method kotlin() for arguments ...
+dependency_overrides:
+  auto_orientation_v2: 2.4.6
