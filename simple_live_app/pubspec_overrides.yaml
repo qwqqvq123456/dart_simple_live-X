@@ -1,11 +1,14 @@
 # 该文件用于固定个别依赖的版本，避免上游 pubspec.yaml 中的 ^ 范围自动解析到
 # 与当前 AGP 8.9 / Gradle 8.12 不兼容的新版本（不修改 pubspec.yaml，避免上游同步时冲突）。
 #
-# 1) auto_orientation_v2 2.4.7 改用 AGP 9 并直接写 kotlin {}，在 AGP 8.9 下报：
-#    Could not find method kotlin() for arguments ...
-# 2) dynamic_color 1.9.0 的 android/build.gradle.kts 顶部使用 kotlin { compilerOptions {} }
-#    但没有 apply org.jetbrains.kotlin.android，在 AGP 8.9 下报：
-#    Unresolved reference: compilerOptions
+# 1) auto_orientation_v2：
+#    2.4.x 由他人接手改版（com.rizkyghofur），android/src 下是 Kotlin 源码，但
+#    android/build.gradle 没有 apply kotlin-android 插件，导致 AutoOrientationPlugin
+#    永远不会被编译，报：cannot find symbol class AutoOrientationPlugin；
+#    2.4.7 更进一步改成 AGP 9 + kotlin {}，报 Could not find method kotlin()。
+#    2.3.6 是原始 Java 实现，可正常编译。
+# 2) dynamic_color 1.9.0 的 android/build.gradle.kts 顶部直接写 kotlin { compilerOptions {} }
+#    却没有 apply org.jetbrains.kotlin.android，在 AGP 8.9 下报 Unresolved reference: compilerOptions。
 dependency_overrides:
-  auto_orientation_v2: 2.4.6
+  auto_orientation_v2: 2.3.6
   dynamic_color: 1.8.1
