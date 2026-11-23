@@ -10,4 +10,4 @@ jobs:
       - name: 用内置 GITHUB_TOKEN 触发构建工作流
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build-android-release.yml --ref master
+        run: gh workflow run build-android-release.yml --ref master --repo "${{ github.repository }}"
