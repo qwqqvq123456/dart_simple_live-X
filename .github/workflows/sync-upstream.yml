@@ -88,7 +88,7 @@ jobs:
           echo "✅ 已经和上游一致，本次无需同步。" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 合并上游（保留本仓库改动）
-        if: steps.upstream.outputs.behind != '0' && inputs.force != true
+        if: steps.upstream.outputs.behind != '0' && !inputs.force
         id: merge
         run: |
           set -uo pipefail
@@ -121,7 +121,7 @@ jobs:
           fi
 
       - name: 强制对齐上游
-        if: steps.upstream.outputs.behind != '0' && inputs.force == true
+        if: steps.upstream.outputs.behind != '0' && inputs.force
         id: hard_reset
         run: |
           set -uo pipefail
@@ -162,7 +162,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 触发 Android 构建
-        if: steps.upstream.outputs.behind != '0' && inputs.trigger_build != false
+        if: steps.upstream.outputs.behind != '0' && (github.event_name != 'workflow_dispatch' || inputs.trigger_build)
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
         run: |
