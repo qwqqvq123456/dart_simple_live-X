@@ -86,7 +86,6 @@ bash scripts/gen-keystore.sh
 - 手动：**Actions → 构建 Android Release → Run workflow**，可选 Flutter 版本、是否额外构建通用包、是否更新 Release。
 
 构建完成后可以在两处拿到 APK：
-
 1. **Release 页面（推荐，手机直接下载）**：
    <https://github.com/qwqqvq123456/dart_simple_live-X/releases/tag/android-latest>
    这个 Release 每次构建都会覆盖更新，地址固定不变。
@@ -102,6 +101,28 @@ bash scripts/gen-keystore.sh
 | `SimpleLive-<版本>-universal.apk` | 不确定机型时用这个 |
 
 安装时需允许「未知来源应用」。若提示签名冲突，先卸载旧版本再装。
+
+### 关于 `pubspec_overrides.yaml`（重要）
+
+仓库里新增了一个 `simple_live_app/pubspec_overrides.yaml`，固定了两个依赖：
+
+```yaml
+dependency_overrides:
+  auto_orientation_v2: 2.3.6
+  dynamic_color: 1.8.1
+```
+
+原因（都是上游 `pubspec.yaml` 里 `^` 范围自动升级到新版本导致的，与工作流无关）：
+
+| 包 | 解析到 | 问题 | 处理 |
+| --- | --- | --- | --- |
+| `auto_orientation_v2` | 2.4.7 | 改成 AGP 9 + `kotlin {}`，报 `Could not find method kotlin()` | 钉 2.3.6 |
+| `auto_orientation_v2` | 2.4.6 | 由他人接手改版，`android/src` 是 Kotlin 源码但没 apply `kotlin-android`，类根本没被编译 → 报 `cannot find symbol class AutoOrientationPlugin` | 同上，钉 2.3.6（原始 Java 实现） |
+| `dynamic_color` | 1.9.0 | `build.gradle.kts` 顶部直接写 `kotlin { compilerOptions {} }` 却没 apply Kotlin 插件 → 报 `Unresolved reference: compilerOptions` | 钉 1.8.1 |
+
+用 `pubspec_overrides.yaml` 而不是改 `pubspec.yaml` 的好处：上游以后改这行不会和你的分支冲突，也不影响 Dart 侧代码。
+
+等上游把 AGP 升到 9.x 后，删掉这个文件即可。以后再遇到同类 `Could not find method kotlin()` / `cannot find symbol` 报错，处理方式一样：在 `dependency_overrides` 里钉回上一个可用版本。
 
 ---
 
